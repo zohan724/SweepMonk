@@ -1,0 +1,14 @@
+# fly.toml - SweepMonk Bot 配置
+app = 'sweepmonk-bot'
+primary_region = 'nrt'
+
+[build]
+
+[env]
+  LOG_LEVEL = "INFO"
+
+# Bot 是長時間運行的程序，不需要 HTTP 服務
+[[vm]]
+  memory = '256mb'
+  cpu_kind = 'shared'
+  cpus = 1

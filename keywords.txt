@@ -1,0 +1,165 @@
+# 敏感關鍵字列表
+# 每行一個關鍵字，以 # 開頭的行為註解
+# 正則表達式以 regex: 開頭
+
+# === 投資詐騙相關 ===
+投資
+理財
+賺錢
+被動收入
+財富自由
+日賺
+月入
+穩賺
+零風險
+高回報
+高收益
+本金
+翻倍
+帶單
+跟單
+操盤
+外匯
+虛擬貨幣
+比特幣
+以太幣
+數字貨幣
+加密貨幣
+
+# === 博彩相關 ===
+博彩
+娛樂城
+賭場
+百家樂
+老虎機
+彩票
+六合彩
+體育投注
+真人荷官
+
+# === 代理招募 ===
+代理
+招代理
+招商
+合夥人
+分銷
+推廣員
+
+# === 聯繫方式引流 ===
+加LINE
+加line
+加微信
+加我
+私聊
+私訊
+私信
+諮詢了解
+詳情咨詢
+有興趣聯繫
+飛機群
+TG群
+
+# === 色情相關 ===
+約炮
+一夜情
+援交
+外圍
+小姐
+上門服務
+全套服務
+
+# === 其他詐騙 ===
+刷單
+兼職
+在家工作
+日結
+零門檻
+無需經驗
+輕鬆賺
+
+# === 英文投資詐騙 ===
+passive income
+make money
+earn money
+work from home
+side hustle
+financial freedom
+get rich
+easy money
+quick money
+free money
+double your
+guaranteed profit
+guaranteed return
+no risk
+high yield
+high return
+
+# === 英文加密貨幣詐騙 ===
+bitcoin investment
+crypto investment
+crypto trading
+forex trading
+forex signal
+trading signal
+pump and dump
+airdrop
+giveaway
+send me
+mining pool
+
+# === 英文博彩 ===
+online casino
+sports betting
+slot machine
+poker online
+bet now
+gambling
+
+# === 英文色情/約會 ===
+hookup
+dating site
+adult content
+onlyfans
+meet singles
+hot girls
+sexy
+
+# === 英文聯繫引流 ===
+dm me
+contact me
+click here
+check bio
+link in bio
+join my
+join our
+whatsapp me
+telegram me
+
+# === 英文其他詐騙 ===
+act now
+limited time
+don't miss
+urgent
+congratulations you won
+you have been selected
+claim your
+verify your account
+
+# === 正則表達式 ===
+# 匹配「賺+數字+萬」的模式
+regex:賺\d+萬
+regex:日賺\d+
+regex:月入\d+
+regex:年賺\d+
+
+# 匹配各種變體的聯繫方式
+regex:加.{0,2}(line|LINE|賴|微信|wx|WX)
+regex:(私|加).{0,3}(聊|我|信|訊)
+
+# 英文正則表達式
+regex:earn.{0,10}\$\d+
+regex:make.{0,10}\$\d+
+regex:\$\d+.{0,10}(daily|weekly|monthly)
+regex:dm.{0,5}(me|now|for)
+regex:click.{0,5}(here|link|bio)
