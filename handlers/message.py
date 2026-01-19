@@ -35,6 +35,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
     except TelegramError as e:
         logger.error(f"Failed to get member status: {e}")
+        # 無法確認身份時，為安全起見不處理該訊息
+        return
 
     # 取得過濾器和資料庫
     spam_filter: SpamFilter = context.bot_data.get("spam_filter")
@@ -97,10 +99,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 user_mention = f"@{user.username}" if user.username else user.first_name
                 hours = mute_duration // 3600
                 notification = (
-                    f"⚠️ 偵測到違規訊息\n\n"
-                    f"用戶: {user_mention} (ID: {user.id})\n"
-                    f"關鍵字: {matched_keyword}\n"
-                    f"處理: 刪除訊息，禁言 {hours} 小時"
+                    f"⚠️ 偵測到違規訊息 / Violation Detected\n\n"
+                    f"用戶 User: {user_mention} (ID: {user.id})\n"
+                    f"關鍵字 Keyword: {matched_keyword}\n"
+                    f"處理 Action: 刪除訊息，禁言 {hours} 小時 / Deleted, muted {hours}h"
                 )
                 await message.chat.send_message(notification)
             except TelegramError as e:

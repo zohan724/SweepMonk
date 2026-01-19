@@ -14,6 +14,8 @@ from telegram.ext import (
     ContextTypes,
     ChatMemberHandler,
     CallbackQueryHandler,
+    MessageHandler,
+    filters,
 )
 from telegram.error import TelegramError
 
@@ -28,14 +30,22 @@ VERIFY_CALLBACK_PREFIX = "verify_"
 
 async def handle_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """處理新成員加入事件"""
+    # Debug: 記錄所有 chat_member 更新
+    logger.info(f"ChatMember update received: {update}")
+
     chat_member = update.chat_member
     if not chat_member:
+        logger.warning("No chat_member in update")
         return
 
     # 檢查是否為新成員加入
     old_status = chat_member.old_chat_member.status
     new_status = chat_member.new_chat_member.status
 
+    logger.info(f"Status change: {old_status} -> {new_status} for user {chat_member.new_chat_member.user.id}")
+
+    # 只處理真正的新成員加入（從 left/kicked 變成 member）
+    # 不處理 restricted -> restricted（這是 Bot 自己限制用戶時產生的）
     if old_status in ("left", "kicked") and new_status == "member":
         user = chat_member.new_chat_member.user
         chat = chat_member.chat
@@ -51,6 +61,12 @@ async def handle_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             logger.error("Database not initialized")
             return
 
+        # 檢查是否已經在待驗證狀態（避免重複處理）
+        existing = await db.get_pending_verification(user.id, chat.id)
+        if existing:
+            logger.info(f"User {user.id} already pending verification, skipping")
+            return
+
         # 取得群組設定
         chat_settings = await db.get_chat_settings(chat.id)
         verification_timeout = chat_settings.get(
@@ -63,7 +79,13 @@ async def handle_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 user_id=user.id,
                 permissions=ChatPermissions(
                     can_send_messages=False,
-                    can_send_media_messages=False,
+                    can_send_audios=False,
+                    can_send_documents=False,
+                    can_send_photos=False,
+                    can_send_videos=False,
+                    can_send_video_notes=False,
+                    can_send_voice_notes=False,
+                    can_send_polls=False,
                     can_send_other_messages=False,
                     can_add_web_page_previews=False,
                 ),
@@ -80,7 +102,7 @@ async def handle_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(
-                    "✅ 我不是機器人",
+                    "✅ 我不是機器人 / I'm not a robot",
                     callback_data=f"{VERIFY_CALLBACK_PREFIX}{user.id}_{chat.id}",
                 )
             ]
@@ -88,8 +110,9 @@ async def handle_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
         try:
             verify_message = await chat.send_message(
-                f"👋 歡迎 {user_mention} 加入！\n\n"
-                f"請在 {timeout_minutes} 分鐘內點擊下方按鈕完成驗證，否則將被自動移出群組。",
+                f"👋 歡迎 {user_mention} 加入！\nWelcome {user_mention}!\n\n"
+                f"請在 {timeout_minutes} 分鐘內點擊下方按鈕完成驗證，否則將被自動移出群組。\n"
+                f"Please click the button within {timeout_minutes} minutes to verify, or you will be removed.",
                 reply_markup=keyboard,
             )
             logger.info(f"Sent verification message for user {user.id}")
@@ -133,23 +156,23 @@ async def handle_verification_button(
         data = query.data[len(VERIFY_CALLBACK_PREFIX):]
         user_id, chat_id = map(int, data.split("_"))
     except ValueError:
-        await query.answer("驗證資料錯誤")
+        await query.answer("驗證資料錯誤 / Verification data error")
         return
 
     # 檢查是否為本人點擊
     if query.from_user.id != user_id:
-        await query.answer("這不是你的驗證按鈕！", show_alert=True)
+        await query.answer("這不是你的驗證按鈕！\nThis is not your verification button!", show_alert=True)
         return
 
     db: Database = context.bot_data.get("database")
     if not db:
-        await query.answer("系統錯誤，請稍後再試")
+        await query.answer("系統錯誤，請稍後再試 / System error, please try again")
         return
 
     # 檢查是否還在待驗證狀態
     pending = await db.get_pending_verification(user_id, chat_id)
     if not pending:
-        await query.answer("驗證已過期或已完成")
+        await query.answer("驗證已過期或已完成 / Verification expired or completed")
         try:
             await query.message.delete()
         except TelegramError:
@@ -163,10 +186,15 @@ async def handle_verification_button(
             user_id=user_id,
             permissions=ChatPermissions(
                 can_send_messages=True,
-                can_send_media_messages=True,
+                can_send_audios=True,
+                can_send_documents=True,
+                can_send_photos=True,
+                can_send_videos=True,
+                can_send_video_notes=True,
+                can_send_voice_notes=True,
+                can_send_polls=True,
                 can_send_other_messages=True,
                 can_add_web_page_previews=True,
-                can_send_polls=True,
                 can_invite_users=True,
                 can_pin_messages=False,
                 can_change_info=False,
@@ -175,7 +203,7 @@ async def handle_verification_button(
         logger.info(f"Restored permissions for user {user_id}")
     except TelegramError as e:
         logger.error(f"Failed to restore permissions: {e}")
-        await query.answer("驗證失敗，請聯繫管理員")
+        await query.answer("驗證失敗，請聯繫管理員 / Verification failed, contact admin")
         return
 
     # 2. 移除待驗證記錄
@@ -188,14 +216,14 @@ async def handle_verification_button(
         job.schedule_removal()
 
     # 4. 更新驗證訊息
-    await query.answer("驗證成功！歡迎加入！")
+    await query.answer("✅ 驗證成功！歡迎加入！\nVerification successful! Welcome!")
     try:
         user_mention = (
             f"@{query.from_user.username}"
             if query.from_user.username
             else query.from_user.first_name
         )
-        await query.message.edit_text(f"✅ {user_mention} 驗證成功！歡迎加入群組！")
+        await query.message.edit_text(f"✅ {user_mention} 驗證成功！歡迎加入群組！\n{user_mention} verified! Welcome to the group!")
     except TelegramError as e:
         logger.error(f"Failed to edit verification message: {e}")
 
@@ -238,10 +266,110 @@ async def verification_timeout_callback(context: ContextTypes.DEFAULT_TYPE) -> N
         await context.bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
-            text="⏰ 驗證超時，用戶已被移出群組。",
+            text="⏰ 驗證超時，用戶已被移出群組。\nVerification timeout, user has been removed.",
         )
     except TelegramError as e:
         logger.error(f"Failed to edit timeout message: {e}")
+
+
+async def handle_new_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """處理新成員加入事件（透過服務訊息 - 備用方式）"""
+    message = update.message
+    if not message or not message.new_chat_members:
+        return
+
+    chat = message.chat
+    db: Database = context.bot_data.get("database")
+    if not db:
+        logger.error("Database not initialized")
+        return
+
+    # 取得群組設定
+    chat_settings = await db.get_chat_settings(chat.id)
+    verification_timeout = chat_settings.get(
+        "verification_timeout", config.VERIFICATION_TIMEOUT
+    )
+
+    for user in message.new_chat_members:
+        # 忽略 Bot 自己
+        if user.is_bot:
+            continue
+
+        logger.info(f"New member joined (via message): {user.id} ({user.username}) in chat {chat.id}")
+
+        # 檢查是否已經在待驗證狀態（避免重複處理，可能已被 ChatMemberHandler 處理）
+        existing = await db.get_pending_verification(user.id, chat.id)
+        if existing:
+            logger.info(f"User {user.id} already pending verification (via message handler), skipping")
+            continue
+
+        # 1. 限制新成員發言權限
+        try:
+            await chat.restrict_member(
+                user_id=user.id,
+                permissions=ChatPermissions(
+                    can_send_messages=False,
+                    can_send_audios=False,
+                    can_send_documents=False,
+                    can_send_photos=False,
+                    can_send_videos=False,
+                    can_send_video_notes=False,
+                    can_send_voice_notes=False,
+                    can_send_polls=False,
+                    can_send_other_messages=False,
+                    can_add_web_page_previews=False,
+                ),
+            )
+            logger.info(f"Restricted new member {user.id}")
+        except TelegramError as e:
+            logger.error(f"Failed to restrict member: {e}")
+            continue
+
+        # 2. 發送驗證訊息
+        user_mention = f"@{user.username}" if user.username else user.first_name
+        timeout_minutes = verification_timeout // 60
+
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    "✅ 我不是機器人 / I'm not a robot",
+                    callback_data=f"{VERIFY_CALLBACK_PREFIX}{user.id}_{chat.id}",
+                )
+            ]
+        ])
+
+        try:
+            verify_message = await chat.send_message(
+                f"👋 歡迎 {user_mention} 加入！\nWelcome {user_mention}!\n\n"
+                f"請在 {timeout_minutes} 分鐘內點擊下方按鈕完成驗證，否則將被自動移出群組。\n"
+                f"Please click the button within {timeout_minutes} minutes to verify, or you will be removed.",
+                reply_markup=keyboard,
+            )
+            logger.info(f"Sent verification message for user {user.id}")
+        except TelegramError as e:
+            logger.error(f"Failed to send verification message: {e}")
+            continue
+
+        # 3. 記錄待驗證狀態
+        expires_at = datetime.now() + timedelta(seconds=verification_timeout)
+        await db.add_pending_verification(
+            user_id=user.id,
+            chat_id=chat.id,
+            message_id=verify_message.message_id,
+            expires_at=expires_at,
+        )
+
+        # 4. 設定超時任務
+        context.job_queue.run_once(
+            verification_timeout_callback,
+            when=verification_timeout,
+            data={
+                "user_id": user.id,
+                "chat_id": chat.id,
+                "message_id": verify_message.message_id,
+            },
+            name=f"verify_timeout_{user.id}_{chat.id}",
+        )
 
 
 async def check_expired_verifications(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -271,7 +399,7 @@ async def check_expired_verifications(context: ContextTypes.DEFAULT_TYPE) -> Non
                 await context.bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=message_id,
-                    text="⏰ 驗證超時，用戶已被移出群組。",
+                    text="⏰ 驗證超時，用戶已被移出群組。\nVerification timeout, user has been removed.",
                 )
             except TelegramError:
                 pass
@@ -282,9 +410,17 @@ async def check_expired_verifications(context: ContextTypes.DEFAULT_TYPE) -> Non
 
 def setup_member_handlers(application) -> None:
     """設定成員處理器"""
-    # 監聽成員狀態變化
+    # 監聽成員狀態變化（主要方式）
     application.add_handler(
         ChatMemberHandler(handle_new_member, ChatMemberHandler.CHAT_MEMBER)
+    )
+
+    # 監聽 new_chat_members 服務訊息（備用方式，適用於某些群組）
+    application.add_handler(
+        MessageHandler(
+            filters.StatusUpdate.NEW_CHAT_MEMBERS,
+            handle_new_chat_members,
+        )
     )
 
     # 監聽驗證按鈕點擊
